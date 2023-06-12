@@ -1,0 +1,66 @@
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    - cron: '7 7 * * *'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+name: rolling
+jobs:
+# Does crate build on nightly?
+  nightly:
+    runs-on: ubuntu-latest
+    name: ubuntu / nightly
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Install nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          default: true
+      - name: cargo generate-lockfile
+        if: hashFiles('Cargo.lock') == ''
+        uses: actions-rs/cargo@v1
+        with:
+          command: generate-lockfile
+      - name: cargo test --locked
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --locked --all-features --all-targets
+# Do your dependencies tests still pass with newer versions (lib)
+# Ensures users doesn't break as a result of a dependency being updated
+  update:
+    runs-on: ubuntu-latest
+    name: ubuntu / beta / updated
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Install beta
+        if: hashFiles('Cargo.lock') != ''
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: beta
+          default: true
+      - name: cargo update
+        if: hashFiles('Cargo.lock') != ''
+        uses: actions-rs/cargo@v1
+        with:
+          command: update
+      - name: cargo test
+        if: hashFiles('Cargo.lock') != ''
+        uses: actions-rs/cargo@v1
+        with: 
+          command: test
+          args: --locked --all-features --all-targets
+        env:
+          RUSTFLAGS: -D deprecated
+
+
